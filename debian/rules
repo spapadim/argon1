@@ -1,0 +1,34 @@
+#!/usr/bin/make -f
+
+# Based on rules for supervisord debian package;
+#  see https://salsa.debian.org/python-team/applications/supervisor/
+
+#export PYBUILD_DESTDIR_python3=debian/argon1/
+export PYBUILD_NAME=argonone
+
+%:
+	dh $@ --with python3,sysuser --buildsystem=pybuild
+
+override_dh_auto_install:
+#	for i in `find argon1 -type f`; do \
+#		sed '1s,#!.*[pP][yY][Tt][hH][oO][nN][^ ]*\(.*\),#!/usr/bin/python3\1,' \
+#			$$i > $$i.temp; \
+#		if cmp --quiet $$i $$i.temp; then \
+#			rm -f $$i.temp; \
+#		else \
+#			mv -f $$i.temp $$i; \
+#			chmod 755 $$i; \
+#			echo "fixed interpreter: $$i"; \
+#		fi; \
+#	done
+	dh_auto_install
+	install -m 644 argonone.yaml debian/tmp/etc/argonone.yaml
+
+#override_dh_auto_build:
+#	$(MAKE) -C docs html
+#	dh_auto_build
+
+#override_dh_auto_clean:
+#	rm -rf docs/.build
+#	dh_auto_clean
+

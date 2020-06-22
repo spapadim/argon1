@@ -1,0 +1,33 @@
+Source: argon1
+Section: admin
+Priority: optional
+Maintainer: Spiros Papadimitriou <spapadim@gmail.com>
+Build-Depends:
+ debhelper-compat (= 13),
+ dh-sysuser,
+ dh-python,
+ python3-all,
+ python3-setuptools
+VCS-Git: https://github.com/spapadim/argon1.git
+VCS-Browser: https://github.com/spapadim/argon1
+Standards-Version: 4.5.0
+Rules-Requires-Root: no
+Homepage: https://github.com/spapadim/argon1
+
+Package: argon1
+Architecture: all
+Pre-Depends:
+ ${misc:Pre-Depends}
+Depends:
+ lsb-base,
+ ${misc:Depends},
+ ${python3:Depends},
+ python3-rpi.gpio,
+ python3-smbus,
+ python3-jsonrpclib-pelix,
+ python3-yaml
+Description: Alternative implementation for Argon One case fan and power control
+ This is an alternative implementation for fan and power control of
+ the Argon One Raspberry Pi case. This is a personal mini-project;
+ it is not affiliated in any way with Argon40, nor endorsed by them.
+

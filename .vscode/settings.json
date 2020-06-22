@@ -1,0 +1,6 @@
+{
+    "python.pythonPath": "/usr/bin/python3",
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true,
+    "python.linting.flake8Args": [ "--extend-ignore=E111,E114", "--max-line-length=120" ]
+}

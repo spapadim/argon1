@@ -1,0 +1,16 @@
+[Unit]
+Description=Fan and power control for ArgonOne case
+After=network.target
+
+[Service]
+User=argonone
+Group=argonone
+ExecStart=/usr/bin/argononed
+ExecStop=/usr/bin/argonctl shutdown
+KillMode=process
+Restart=on-failure
+RestartSec=50s
+
+[Install]
+WantedBy=multi-user.target
+

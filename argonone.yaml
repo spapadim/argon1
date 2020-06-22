@@ -1,0 +1,18 @@
+power_button:
+  enabled: True
+  reboot_cmd: sudo reboot
+  shutdown_cmd: sudo shutdown -h now
+fan_control:
+  enabled: True
+  poll_interval_sec: 10.0
+  hysteresis_sec: 30.0
+  speed_lut:
+    - default: 0
+    - 45: 1
+    - 50: 2
+    - 55: 3
+    - 56: 10
+    - 57: 30
+    - 58: 55
+    - 59: 75
+    - 60: 100
