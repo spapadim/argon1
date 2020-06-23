@@ -21,7 +21,6 @@ setup(
 
   install_requires=[
     'PyYAML',
-    'jsonrpclib-pelix',
     'RPi.GPIO',
     # TODO - python3-smbus deb source is i2c-tools, and package does not show up in pip...
   ],

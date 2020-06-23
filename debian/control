@@ -24,7 +24,6 @@ Depends:
  ${python3:Depends},
  python3-rpi.gpio,
  python3-smbus,
- python3-jsonrpclib-pelix,
  python3-yaml
 Description: Alternative implementation for Argon One case fan and power control
  This is an alternative implementation for fan and power control of

@@ -19,7 +19,14 @@ def _error_exit(error_msg: str, exit_status: int = 1) -> None:
 
 
 _argonctl_cmd_aliases = {
-  # TODO
+  'temperature': 'get_temperature',
+  'get_temp': 'get_temperature', 'temp': 'get_temperature',
+  'get_speed': 'get_fan_speed', 'speed': 'get_fan_speed',
+  'set_speed': 'set_fan_speed',
+  'pause_fan': 'disable_fan_control', 'pause': 'disable_fan_control',
+  'resume_fan': 'enable_fan_control', 'resume': 'enable_fan_control',
+  'fan_status': 'is_fan_control_enabled',
+  'power_status': 'is_power_control_enabled',
 }
 
 def argonctl_main() -> None:  # noqa: E302

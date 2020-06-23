@@ -9,9 +9,6 @@ import smbus
 import RPi.GPIO as GPIO
 from threading import Thread, Lock
 import os
-import socket
-from jsonrpclib.SimpleJSONRPCServer import SimpleJSONRPCServer
-from jsonrpclib import ServerProxy as JSONRPCProxy
 from contextlib import contextmanager
 import shlex
 import subprocess
@@ -19,6 +16,8 @@ import time
 import yaml
 
 from typing import Generic, TypeVar, Sequence, List, Dict, Union, Optional
+
+from . import rpc
 
 # TODO - Add logging support
 
@@ -221,7 +220,7 @@ class FanControlThread(Thread):
 
 class RPCThread(Thread):
   def __init__(self, daemon: 'ArgonDaemon', *args, **kwargs):
-    super().__init__(args, kwargs)
+    super().__init__(*args, **kwargs)
     self._daemon = daemon
 
   def _get_temperature(self) -> float:
@@ -261,8 +260,8 @@ class RPCThread(Thread):
   def run(self) -> None:
     if os.path.exists(_RPC_SOCK_PATH):
       os.remove(_RPC_SOCK_PATH)
-    self._server = SimpleJSONRPCServer(_RPC_SOCK_PATH, address_family=socket.AF_UNIX)
-    self._server.register_function(self._get_temperature, 'get_temp')
+    self._server = rpc.UnixXMLRPCServer(_RPC_SOCK_PATH, socket_permissions=0o770, log_requests=False)
+    self._server.register_function(self._get_temperature, 'get_temperature')
     self._server.register_function(self._get_fan_speed, 'get_fan_speed')
     self._server.register_function(self._set_fan_speed, 'set_fan_speed')
     self._server.register_function(self._disable_fan_control, 'disable_fan_control')
@@ -367,13 +366,14 @@ class ArgonDaemon:
     self._rpc_thread.join()
 
   def close(self) -> None:
-    self._rpc_thread.close()
+    # self._rpc_thread.close()
+    pass
 
 
 @contextmanager
-def daemon_client() -> JSONRPCProxy:
+def daemon_client() -> rpc.UnixServerProxy:
   try:
-    proxy = JSONRPCProxy('unix+http://.' + _RPC_SOCK_PATH)
+    proxy = rpc.UnixServerProxy(_RPC_SOCK_PATH)
     yield proxy
   finally:
     proxy('close')()
