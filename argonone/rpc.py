@@ -43,12 +43,21 @@ class UnixXMLRPCRequestHandler(SimpleXMLRPCRequestHandler):
   def address_string(self):
     return self.client_address
 
+  def log_message(self, format, *args):
+    # Override BaseHTTPRequestHandler to use logging facilities instead of stderr
+    if self.server.logger is not None:
+      self.server.logger.info("XMLRPC: " + format, *args)
+    else:
+      # Fallback, just in case this is used 
+      super().log_message(format, *args)
+
 
 class UnixXMLRPCServer(UnixStreamServer, SimpleXMLRPCDispatcher):
   def __init__(self, addr, socket_permissions=0o755,
-               log_requests=True, allow_none=True, encoding=None,
+               logger=None, allow_none=True, encoding=None,
                bind_and_activate=True, use_builtin_types=True):
-    self.logRequests = log_requests
+    self.logger = logger
+    self.logRequests = logger is not None
     self.socket_permissions = socket_permissions
     SimpleXMLRPCDispatcher.__init__(self, allow_none, encoding, use_builtin_types)
     UnixStreamServer.__init__(self, addr, UnixXMLRPCRequestHandler, bind_and_activate)

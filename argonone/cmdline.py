@@ -51,6 +51,8 @@ def argonctl_main() -> None:  # noqa: E302
 
 
 def argondaemon_main() -> None:
+  import logging
+  logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %H:%M:%S', level=logging.INFO)
   daemon = ArgonDaemon()
   try:
     daemon.start()

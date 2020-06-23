@@ -14,6 +14,7 @@ import shlex
 import subprocess
 import time
 import yaml
+import logging
 
 from typing import Generic, TypeVar, Sequence, List, Dict, Union, Optional
 
@@ -22,6 +23,8 @@ from . import rpc
 # TODO - Add logging support
 
 __all__ = ['get_pi_temperature', 'Fan', 'StepFunction', 'ArgonDaemon', 'daemon_client']
+
+log = logging.getLogger("argononed")
 
 _SHUTDOWN_BCM_PIN = 4
 _SMBUS_DEV = 1 if GPIO.RPI_INFO['P1_REVISION'] > 1 else 0
@@ -74,7 +77,7 @@ class Fan:
       self._bus.write_byte_data(_SMBUS_ADDRESS, 0, int(value))
       self._speed = value  # Only update if write was successful
     except IOError:
-      pass
+      log.warn("Fan control I2C command failed")
 
   def close(self) -> None:
     self._bus.close()
@@ -135,11 +138,14 @@ class PowerControlThread(Thread):
 
   def disable_control(self) -> None:
     self._control_enabled = False
+    log.info("Power button control disabled")
 
   def enable_control(self) -> None:
     self._control_enabled = True
+    log.info("Power button control enabled")
 
   def run(self):
+    log.info("Power button monitoring and control thread starting")
     # Set up GPIO pin to listen
     GPIO.setwarnings(False)
     GPIO.setmode(GPIO.BCM)
@@ -157,11 +163,17 @@ class PowerControlThread(Thread):
       GPIO.wait_for_edge(_SHUTDOWN_BCM_PIN, GPIO.FALLING)
       pulse_time = time.time() - rise_time
       if 0.01 <= pulse_time < 0.03:
+        log.info("Power button reboot detected")
         if self._control_enabled:
+          log.info("Issuing reboot command")
           subprocess.run(self._reboot_cmdargs)
       elif 0.03 <= pulse_time < 0.05:
+        log.info("Power button shutdown detected")
         if self._control_enabled:
+          log.info("Issuing shutdown command")
           subprocess.run(self._shutdown_cmdargs)
+    
+    log.info("Power button monitoring and control thread exiting")
 
   def stop(self):
     self._stop = True
@@ -199,20 +211,25 @@ class FanControlThread(Thread):
 
   def enable_control(self) -> None:
     self._control_enabled = True
+    log.info("Fan control disabled")
 
   def disable_control(self) -> None:
     self._control_enabled = False
+    log.info("Fan control enabled")
 
   def run(self) -> None:
+    log.info("Fan control and temperature monitoring thread starting")
     self._stop = False
     while not self._stop:
       self._temperature = get_pi_temperature()
       if self._control_enabled:
         speed = round(self._fan_speed_lut(self._temperature))
         if speed != self.fan_speed:
+          log.info(f"Adjusting fan speed to {speed} for temperature {self._temperature}")
           self.fan_speed = speed
           # TODO - Implement hysteresis
       time.sleep(self._poll_interval)
+    log.info("Fan control and temperature monitoring thread exiting")
 
   def stop(self) -> None:
     self._stop = True
@@ -251,6 +268,7 @@ class RPCThread(Thread):
     return self._daemon.power_control_enabled
 
   def _shutdown(self) -> None:
+    log.info("Shutdown requested")
     # Stop fan first
     self._daemon.disable_fan_control()
     self._daemon.fan_speed = 0
@@ -258,9 +276,10 @@ class RPCThread(Thread):
     self._daemon.stop()
 
   def run(self) -> None:
+    log.info("RPC server initialization")
     if os.path.exists(_RPC_SOCK_PATH):
       os.remove(_RPC_SOCK_PATH)
-    self._server = rpc.UnixXMLRPCServer(_RPC_SOCK_PATH, socket_permissions=0o770, log_requests=False)
+    self._server = rpc.UnixXMLRPCServer(_RPC_SOCK_PATH, socket_permissions=0o770, logger=log)
     self._server.register_function(self._get_temperature, 'get_temperature')
     self._server.register_function(self._get_fan_speed, 'get_fan_speed')
     self._server.register_function(self._set_fan_speed, 'set_fan_speed')
@@ -271,10 +290,12 @@ class RPCThread(Thread):
     self._server.register_function(self._enable_power_control, 'enable_power_control')
     self._server.register_function(self._is_power_control_enabled, 'is_power_control_enabled')
     self._server.register_function(self._shutdown, 'shutdown')
+    log.info("RPC server thread starting")
     try:
       self._server.serve_forever()
     finally:
       os.remove(_RPC_SOCK_PATH)
+    log.info("RPC server thread exiting")
 
   def stop(self) -> None:
     self._server.shutdown()
@@ -351,11 +372,13 @@ class ArgonDaemon:
     self._power_control_thread.enable_control()
 
   def start(self) -> None:
+    log.info("Daemon starting")
     self._power_control_thread.start()
     self._fan_control_thread.start()
     self._rpc_thread.start()
 
   def stop(self) -> None:
+    log.info("Daemon stopping")
     self._power_control_thread.stop()
     self._fan_control_thread.stop()
     self._rpc_thread.stop()
