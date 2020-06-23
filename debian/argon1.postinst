@@ -1,0 +1,42 @@
+#!/bin/bash
+
+set -e
+
+. /usr/share/debconf/confmodule
+
+if [ -n "$DEBIAN_SCRIPT_DEBUG" ]; then set -v -x; DEBIAN_SCRIPT_TRACE=1; fi
+${DEBIAN_SCRIPT_TRACE:+ echo "#42#DEBUG# RUNNING $0 $*" 1>&2 }
+
+#DEBHELPER#
+
+# Prints out the usernames od all user accounts (one per line)
+user_account_names() {
+  getent passwd | while read -r line; do
+    readarray -d: -t fields <<<"$line"
+    if [ "${fields[2]}" -ge 1000 -a "${fields[2]}" -lt 60000 ]; then
+      echo "${fields[0]}"
+    fi
+  done
+}
+
+# Add user "pi" to "argonone" group (if user exists)
+if getent passwd pi >/dev/null; then
+  usermod -a -G argonone pi
+fi
+
+# If there are user accounts other than "pi", offer to add them to "argonone" group
+if user_account_names | grep -v pi >/dev/null; then
+  db_input high argon1/add-all-user-accounts || true
+  db_go || true
+  db_get argon1/add-all-user-accounts || true
+  if [ "$RET" = "true" ]; then
+    user_account_names | grep -v pi | while read -r username; do
+      echo "Adding user ${username} to argonone group"
+      usermod -a -G argonone ${username}
+    done
+  fi
+fi
+
+# Display information message about adding users to group later
+db_input high argon1/add-user-information || true
+db_go

@@ -2,6 +2,21 @@
 #########################
 # Debian
 
+# dpkg build directory
+/debian/argon1/
+
+# auto-generated files
+/debian/files
+/debian/*.substvars
+
+# debhelper
+/debian/.debhelper/
+/debian/*.debhelper
+/debian/*.debhelper.log
+/debian/debhelper-build-stamp
+
+# pybuild
+.pybuild/
 
 #########################
 # Python

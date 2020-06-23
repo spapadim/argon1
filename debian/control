@@ -3,7 +3,7 @@ Section: admin
 Priority: optional
 Maintainer: Spiros Papadimitriou <spapadim@gmail.com>
 Build-Depends:
- debhelper-compat (= 13),
+ debhelper-compat (= 12),
  dh-sysuser,
  dh-python,
  python3-all,

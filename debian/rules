@@ -9,7 +9,10 @@ export PYBUILD_NAME=argonone
 %:
 	dh $@ --with python3,sysuser --buildsystem=pybuild
 
-override_dh_auto_install:
+override_dh_installsystemd:
+	dh_installsystemd --name=argonone
+
+#override_dh_auto_install:
 #	for i in `find argon1 -type f`; do \
 #		sed '1s,#!.*[pP][yY][Tt][hH][oO][nN][^ ]*\(.*\),#!/usr/bin/python3\1,' \
 #			$$i > $$i.temp; \
@@ -21,8 +24,8 @@ override_dh_auto_install:
 #			echo "fixed interpreter: $$i"; \
 #		fi; \
 #	done
-	dh_auto_install
-	install -m 644 argonone.yaml debian/tmp/etc/argonone.yaml
+#	dh_auto_install
+#	install -m 644 argonone.yaml debian/tmp/etc/argonone.yaml
 
 #override_dh_auto_build:
 #	$(MAKE) -C docs html
