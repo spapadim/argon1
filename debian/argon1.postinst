@@ -9,6 +9,10 @@ ${DEBIAN_SCRIPT_TRACE:+ echo "#42#DEBUG# RUNNING $0 $*" 1>&2 }
 
 #DEBHELPER#
 
+# Add user "argonone" to the "i2c" group, so daemon can access
+echo "Adding user argonone to gpio and i2c groups"
+usermod -a -G gpio,i2c argonone
+
 # Prints out the usernames od all user accounts (one per line)
 user_account_names() {
   getent passwd | while read -r line; do
@@ -21,6 +25,7 @@ user_account_names() {
 
 # Add user "pi" to "argonone" group (if user exists)
 if getent passwd pi >/dev/null; then
+  echo "Adding user pi to argonone group"
   usermod -a -G argonone pi
 fi
 

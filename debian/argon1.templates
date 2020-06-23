@@ -1,7 +1,7 @@
 Template: argon1/add-all-user-accounts
 Type: boolean
 Default: true
-_Description: Add all user accounts to the argonone permissions group?
+Description: Add all user accounts to the argonone permissions group?
  Only users in the "argonone" group can invoke argonctl.
  The "pi" user is automatically added (if it exists).
  .
@@ -11,7 +11,7 @@ _Description: Add all user accounts to the argonone permissions group?
 
 Template: argon1/add-user-information
 Type: note
-_Description: Manually adding users to argonone permissions group
+Description: Manually adding users to argonone permissions group
  If you wish to add a user manually at a later time, you just need to
     sudo usermod -a -G argonone <username>
  replacing <username> with the actual username you wish to add.
