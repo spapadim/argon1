@@ -33,8 +33,8 @@ _SMBUS_ADDRESS = 0x1a
 _VCGENCMD_PATH = '/usr/bin/vcgencmd'
 _SYSFS_TEMPERATURE_PATH = '/sys/class/thermal/thermal_zone0/temp'
 _CONFIG_LOCATIONS = [
-  '/etc/argonone.yaml', '/usr/local/etc/argonone.yaml',
-  '$HOME/.config/argonone.yaml', './argonone.yaml',   # XXX - are these two, esp last one, safe??
+  '/etc/argonone.yaml', 
+  '$HOME/.config/argonone.yaml',   # XXX - is this safe??
 ]
 _RPC_SOCK_PATH = '/tmp/argonone.sock'
 
@@ -321,9 +321,12 @@ class ArgonDaemon:
     for config_location in _CONFIG_LOCATIONS:
       config_path = os.path.expandvars(config_location)
       if os.path.isfile(config_path):
+        log.info(f"Loading config file from ${config_path}")
         with open(config_path, 'r') as fp:
           config = yaml.load(fp)
         break
+    if config is None:
+      raise RuntimeError("No configuration file found!")
     return config
 
   def __init__(self):
