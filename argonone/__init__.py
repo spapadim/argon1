@@ -27,6 +27,7 @@ __all__ = ['get_pi_temperature', 'Fan', 'StepFunction', 'ArgonDaemon', 'daemon_c
 log = logging.getLogger("argononed")
 
 _SHUTDOWN_BCM_PIN = 4
+_SHUTDOWN_GPIO_TIMEOUT_MS = 10000 
 _SMBUS_DEV = 1 if GPIO.RPI_INFO['P1_REVISION'] > 1 else 0
 _SMBUS_ADDRESS = 0x1a
 _VCGENCMD_PATH = '/usr/bin/vcgencmd'
@@ -151,16 +152,19 @@ class PowerControlThread(Thread):
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(_SHUTDOWN_BCM_PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
-    self._stop = False
-    while not self._stop:
+    self._stop_requested = False
+    while not self._stop_requested:
       # Logic based on Argon's scripts: it appears that:
       #  - if pulse duration is between 10-30msec, then should reboot
       #  - if pulse duration is betweenm 30-50msec, then should shutdown
       #  - otherwise, nothing should be done
       # Both ranges are inclusive-exlcuside
-      GPIO.wait_for_edge(_SHUTDOWN_BCM_PIN, GPIO.RISING)
+      if GPIO.wait_for_edge(_SHUTDOWN_BCM_PIN, GPIO.RISING, timeout=_SHUTDOWN_GPIO_TIMEOUT_MS) is None:
+        continue # Timed out
       rise_time = time.time()
-      GPIO.wait_for_edge(_SHUTDOWN_BCM_PIN, GPIO.FALLING)
+      if GPIO.wait_for_edge(_SHUTDOWN_BCM_PIN, GPIO.FALLING, timeout=500) is None:
+        log.warn("Power button monitor giving up on pulse that seems to exceed 500msec!")
+        continue
       pulse_time = time.time() - rise_time
       if 0.01 <= pulse_time < 0.03:
         log.info("Power button reboot detected")
@@ -176,7 +180,7 @@ class PowerControlThread(Thread):
     log.info("Power button monitoring and control thread exiting")
 
   def stop(self):
-    self._stop = True
+    self._stop_requested = True
 
 
 class FanControlThread(Thread):
@@ -219,8 +223,8 @@ class FanControlThread(Thread):
 
   def run(self) -> None:
     log.info("Fan control and temperature monitoring thread starting")
-    self._stop = False
-    while not self._stop:
+    self._stop_requested = False
+    while not self._stop_requested:
       self._temperature = get_pi_temperature()
       if self._control_enabled:
         speed = round(self._fan_speed_lut(self._temperature))
@@ -232,7 +236,7 @@ class FanControlThread(Thread):
     log.info("Fan control and temperature monitoring thread exiting")
 
   def stop(self) -> None:
-    self._stop = True
+    self._stop_requested = True
 
 
 class RPCThread(Thread):
@@ -273,7 +277,10 @@ class RPCThread(Thread):
     self._daemon.disable_fan_control()
     self._daemon.fan_speed = 0
     # Finally, stop server
-    self._daemon.stop()
+    # XXX - Executes in a separate thread, as a workaround to avoid deadlock, which would happen
+    #  because _daemon.stop() -> rpc_thread.stop() -> server.shutdown() which waits on condition var...
+    Thread(target=self._daemon.stop).start()
+    #self._daemon.stop()
 
   def run(self) -> None:
     log.info("RPC server initialization")
@@ -298,6 +305,7 @@ class RPCThread(Thread):
     log.info("RPC server thread exiting")
 
   def stop(self) -> None:
+    # XXX - This needs to run in a thread other than the one which invoked run()!
     self._server.shutdown()
     self._server.server_close()
     try:  # XXX - Is this necessary (given finally in run())?
