@@ -1,5 +1,15 @@
-argon1 (0.1-1) unstable; urgency=low
+argon1 (0.1) unstable; urgency=low
 
-  * Initial release
+  * Adjust default LUT so fan doesn't start as often
+  * Tweak system logging setup
+  * Clean up config file locations list
+  * Fixed a couple of deadlocks; clean shutdown now works
+  * Add some quick documentation in README.md
+  * Fixes to DEB package postinst script
+  * Clean up debian rules file
+  * Initial debian version which builds successfully
+  * Add basic logging support
+  * Switch from jsonrpclib to Python-builtin xmlrpclib
+  * Initial commit
+ -- Spiros Papadimitriou <spapadim@gmail.com>  Thu, 25 Jun 2020 07:57:30 -0400
 
-  -- Spiros Papadimitriou <spapadim@gmail.com>  Tue, 23 Jun 2020 15:29:00 -0500
