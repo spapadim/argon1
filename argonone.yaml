@@ -8,7 +8,6 @@ fan_control:
   hysteresis_sec: 30.0
   speed_lut:
     - default: 0
-    - 45: 1
     - 50: 2
     - 55: 3
     - 56: 10
