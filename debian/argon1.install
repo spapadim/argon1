@@ -1,1 +1,3 @@
-argonone.yaml etc/
+#!/usr/bin/dh-exec
+argonone.yaml => etc/argonone.yaml
+debian/argon1.argonone.rsyslogd => etc/rsyslog.d/argonone.conf

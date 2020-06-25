@@ -50,9 +50,22 @@ def argonctl_main() -> None:  # noqa: E302
       print(retval)
 
 
+# Utility function to try and pick a good logging format
+def _is_started_by_system() -> bool:
+  try:
+    from psutil import Process
+  except ImportError:
+    return True
+  parent_name = Process(Process().ppid()).name()
+  return any(parent_name.endswith(progname) for progname in ('systemd', 'upstart', 'init'))
+
+
 def argondaemon_main() -> None:
   import logging
-  logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %H:%M:%S', level=logging.INFO)
+  log_format = '%(levelname)s: %(message)s'
+  if not _is_started_by_system():
+    log_format = '%(asctime)s: ' + log_format
+  logging.basicConfig(format=log_format, datefmt='%m/%d/%Y %H:%M:%S', level=logging.INFO)
   daemon = ArgonDaemon()
   try:
     daemon.start()

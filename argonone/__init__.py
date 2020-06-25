@@ -321,7 +321,7 @@ class ArgonDaemon:
     for config_location in _CONFIG_LOCATIONS:
       config_path = os.path.expandvars(config_location)
       if os.path.isfile(config_path):
-        log.info(f"Loading config file from ${config_path}")
+        log.info(f"Loading config file from {config_path}")
         with open(config_path, 'r') as fp:
           config = yaml.load(fp)
         break

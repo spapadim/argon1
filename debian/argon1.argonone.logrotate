@@ -1,0 +1,13 @@
+/var/log/argonone.log
+{
+	daily
+	rotate 14
+	missingok
+	notifempty
+	compress
+	delaycompress
+	postrotate
+		/usr/lib/rsyslog/rsyslog-rotate
+	endscript
+}
+

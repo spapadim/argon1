@@ -7,3 +7,6 @@ export PYBUILD_NAME=argonone
 
 override_dh_installsystemd:
 	dh_installsystemd --name=argonone
+
+override_dh_installlogrotate:
+	dh_installlogrotate --name=argonone

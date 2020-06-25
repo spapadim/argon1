@@ -6,6 +6,7 @@
 /debian/argon1/
 
 # auto-generated files
+/debian/tmp/
 /debian/files
 /debian/*.substvars
 

@@ -5,6 +5,7 @@ After=network.target
 [Service]
 User=argonone
 Group=argonone
+SyslogIdentifier=argonone
 ExecStart=/usr/bin/argononed
 ExecStop=/usr/bin/argonctl shutdown
 KillMode=process
