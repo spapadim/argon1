@@ -16,49 +16,46 @@ import time
 import yaml
 import logging
 
-from typing import Generic, TypeVar, Sequence, List, Dict, Union, Optional
+from typing import Generic, TypeVar, Sequence, List, Dict, Iterator, Tuple, Union, Optional
 
-from . import rpc
+from gi.repository import GLib
+import dbus
+import dbus.service
+import dbus.mainloop.glib
 
-# TODO - Add logging support
+__all__ = [
+  'Fan', 'get_pi_temperature', 'StepFunction',
+  'ArgonDaemon', 'dbus_proxy'
+]
 
-__all__ = ['get_pi_temperature', 'Fan', 'StepFunction', 'ArgonDaemon', 'daemon_client']
-
+dbus.mainloop.glib.threads_init()
 log = logging.getLogger("argononed")
 
+NOTIFY_VALUE_TEMPERATURE = "temperature"
+NOTIFY_VALUE_FAN_SPEED = "fan_speed"
+NOTIFY_VALUE_FAN_CONTROL_ENABLED = "fan_control_enabled"
+NOTIFY_VALUE_POWER_CONTROL_ENABLED = "power_control_enabled"
+NOTIFY_EVENT_SHUTDOWN = "shutdown_request"
+NOTIFY_EVENT_REBOOT = "reboot_request"
+
+
+############################################################################
+# Constants (private)
+
 _SHUTDOWN_BCM_PIN = 4
-_SHUTDOWN_GPIO_TIMEOUT_MS = 10000 
+_SHUTDOWN_GPIO_TIMEOUT_MS = 10000
 _SMBUS_DEV = 1 if GPIO.RPI_INFO['P1_REVISION'] > 1 else 0
 _SMBUS_ADDRESS = 0x1a
 _VCGENCMD_PATH = '/usr/bin/vcgencmd'
 _SYSFS_TEMPERATURE_PATH = '/sys/class/thermal/thermal_zone0/temp'
 _CONFIG_LOCATIONS = [
-  '/etc/argonone.yaml', 
+  '/etc/argonone.yaml',
   '$HOME/.config/argonone.yaml',   # XXX - is this safe??
 ]
-_RPC_SOCK_PATH = '/tmp/argonone.sock'
 
 
-def _is_monotone_increasing(seq: Sequence) -> bool:
-  return all(seq[i-1] < seq[i] for i in range(1, len(seq)))
-
-
-# vcgencmd-based implementation
-# def get_pi_temperature() -> Optional[float]:
-#   result = subprocess.run([_VCGENCMD_PATH, 'measure_temp'], capture_output=True)
-#   output = result.stdout.strip()
-#   if output.startswith(b'temp='):
-#     return float(output[len('temp='):-len('\'C')])
-#   return None  # Failed to parse temperature value
-
-# sysfs-based implementation (using path found in gpiozero library)
-def get_pi_temperature() -> Optional[float]:
-  try:
-    with open(_SYSFS_TEMPERATURE_PATH, 'r') as fp:
-      return int(fp.read().strip()) / 1000.0
-  except (IOError, ValueError):
-    return None
-
+############################################################################
+# Fan hardware API (I2C)
 
 class Fan:
   def __init__(self, initial_speed: int = 0):
@@ -87,9 +84,18 @@ class Fan:
     self.close()
 
 
+############################################################################
+# Auxilliary classes and functions
+
+def _is_monotone_increasing(seq: Sequence) -> bool:
+  return all(seq[i-1] < seq[i] for i in range(1, len(seq)))
+
+
 T = TypeVar('T')
 
 class StepFunction(Generic[T]):  # noqa: E302
+  ItemIterator = Iterator[Tuple[Optional[float], T]]
+
   @classmethod
   def from_config_lut(cls, lut: Sequence[Dict[Union[str, float], T]]) -> 'StepFunction[T]':
     # Check arguments
@@ -125,10 +131,39 @@ class StepFunction(Generic[T]):  # noqa: E302
         return self._values[i]
     return self._values[-1]
 
+  def items(self) -> ItemIterator:
+    yield (None, self._values[0])
+    yield from zip(self._thresholds, self._values[1:])  # XXX use itertools.islice?
 
+
+# vcgencmd-based implementation
+# def get_pi_temperature() -> Optional[float]:
+#   result = subprocess.run([_VCGENCMD_PATH, 'measure_temp'], capture_output=True)
+#   output = result.stdout.strip()
+#   if output.startswith(b'temp='):
+#     return float(output[len('temp='):-len('\'C')])
+#   return None  # Failed to parse temperature value
+
+
+# sysfs-based implementation (using path found in gpiozero library)
+def get_pi_temperature() -> Optional[float]:
+  try:
+    with open(_SYSFS_TEMPERATURE_PATH, 'r') as fp:
+      return int(fp.read().strip()) / 1000.0
+  except (IOError, ValueError):
+    return None
+
+
+############################################################################
+# Power button monitoring and control
+
+# Point-of-authority for power-button.
+# Monitors power button signals, and controls power state.
+# Anything related to power button should be delegated here.
 class PowerControlThread(Thread):
-  def __init__(self, reboot_cmd: str, shutdown_cmd: str, *args, **kwargs):
+  def __init__(self, daemon: 'ArgonDaemon', reboot_cmd: str, shutdown_cmd: str, *args, **kwargs):
     super().__init__(*args, **kwargs)
+    self.daemon = daemon  # XXX use weakref?
     self._reboot_cmdargs = shlex.split(reboot_cmd)
     self._shutdown_cmdargs = shlex.split(shutdown_cmd)
     self._control_enabled = True
@@ -139,10 +174,12 @@ class PowerControlThread(Thread):
 
   def disable_control(self) -> None:
     self._control_enabled = False
+    self.daemon.notify(NOTIFY_VALUE_POWER_CONTROL_ENABLED, False)
     log.info("Power button control disabled")
 
   def enable_control(self) -> None:
     self._control_enabled = True
+    self.daemon.notify(NOTIFY_VALUE_POWER_CONTROL_ENABLED, True)
     log.info("Power button control enabled")
 
   def run(self):
@@ -160,7 +197,7 @@ class PowerControlThread(Thread):
       #  - otherwise, nothing should be done
       # Both ranges are inclusive-exlcuside
       if GPIO.wait_for_edge(_SHUTDOWN_BCM_PIN, GPIO.RISING, timeout=_SHUTDOWN_GPIO_TIMEOUT_MS) is None:
-        continue # Timed out
+        continue  # Timed out
       rise_time = time.time()
       if GPIO.wait_for_edge(_SHUTDOWN_BCM_PIN, GPIO.FALLING, timeout=500) is None:
         log.warn("Power button monitor giving up on pulse that seems to exceed 500msec!")
@@ -168,25 +205,34 @@ class PowerControlThread(Thread):
       pulse_time = time.time() - rise_time
       if 0.01 <= pulse_time < 0.03:
         log.info("Power button reboot detected")
+        self.daemon.notify(NOTIFY_EVENT_REBOOT)
         if self._control_enabled:
           log.info("Issuing reboot command")
           subprocess.run(self._reboot_cmdargs)
       elif 0.03 <= pulse_time < 0.05:
         log.info("Power button shutdown detected")
+        self.daemon.notify(NOTIFY_EVENT_SHUTDOWN)
         if self._control_enabled:
           log.info("Issuing shutdown command")
           subprocess.run(self._shutdown_cmdargs)
-    
+
     log.info("Power button monitoring and control thread exiting")
 
   def stop(self):
     self._stop_requested = True
 
 
+############################################################################
+# Temperature monitoring and fan control
+
+# Point-of-authority for fan and temperature.
+# Monitors temperature, and controls fan.
+# Anything related to fan and temperature should be delegated here.
 class FanControlThread(Thread):
-  def __init__(self, fan_speed_lut: StepFunction,
+  def __init__(self, daemon: 'ArgonDaemon', fan_speed_lut: StepFunction,
                hysteresis_sec: float, poll_interval_sec: float, *args, **kwargs):
     super().__init__(*args, **kwargs)
+    self.daemon = daemon  # XXX use weakref?
     self._fan = Fan()
     self._fan_mutex = Lock()
     self._fan_speed_lut = fan_speed_lut
@@ -208,6 +254,11 @@ class FanControlThread(Thread):
   def fan_speed(self, value: int) -> None:
     with self._fan_mutex:
       self._fan.speed = value
+      self.daemon.notify(NOTIFY_VALUE_FAN_SPEED, self._fan.speed)
+
+  @property
+  def fan_lut(self) -> StepFunction.ItemIterator:
+    return self._fan_speed_lut.items()
 
   @property
   def control_enabled(self) -> bool:
@@ -215,10 +266,12 @@ class FanControlThread(Thread):
 
   def enable_control(self) -> None:
     self._control_enabled = True
+    self.daemon.notify(NOTIFY_VALUE_FAN_CONTROL_ENABLED, True)
     log.info("Fan control disabled")
 
   def disable_control(self) -> None:
     self._control_enabled = False
+    self.daemon.notify(NOTIFY_VALUE_FAN_CONTROL_ENABLED, False)
     log.info("Fan control enabled")
 
   def run(self) -> None:
@@ -226,6 +279,7 @@ class FanControlThread(Thread):
     self._stop_requested = False
     while not self._stop_requested:
       self._temperature = get_pi_temperature()
+      self.daemon.notify(NOTIFY_VALUE_TEMPERATURE, self._temperature)
       if self._control_enabled:
         speed = round(self._fan_speed_lut(self._temperature))
         if speed != self.fan_speed:
@@ -239,81 +293,110 @@ class FanControlThread(Thread):
     self._stop_requested = True
 
 
-class RPCThread(Thread):
+############################################################################
+# D-Bus service
+
+# class ArgonOneException(dbus.DBusException):
+#   _dbus_error_name = 'net.clusterhack.ArgonOneException'
+
+# XXX python-dbus does not like type annotations
+class ArgonOne(dbus.service.Object):
+  def __init__(self, conn, daemon: 'ArgonDaemon', object_path: str = '/net/clusterhack/ArgonOne'):
+    super().__init__(conn, object_path)
+    self.daemon = daemon
+
+  @dbus.service.method("net.clusterhack.ArgonOne",
+                       in_signature='', out_signature='i')
+  def GetFanSpeed(self):
+    return self.daemon.fan_speed
+
+  @dbus.service.method("net.clusterhack.ArgonOne",
+                       in_signature='i', out_signature='')
+  def SetFanSpeed(self, speed: int):
+    self.daemon.fan_speed = speed
+
+  @dbus.service.method("net.clusterhack.ArgonOne",
+                       in_signature='', out_signature='d')
+  def GetTemperature(self):
+    return self.daemon.temperature
+
+  @dbus.service.method("net.clusterhack.ArgonOne",
+                       in_signature='', out_signature='b')
+  def GetFanControlEnabled(self):
+    return self.daemon.fan_control_enabled
+
+  @dbus.service.method("net.clusterhack.ArgonOne",
+                       in_signature='b', out_signature='')
+  def SetFanControlEnabled(self, enable):
+    if enable:
+      self.daemon.enable_fan_control()
+    else:
+      self.daemon.disable_fan_control()
+
+  @dbus.service.method("net.clusterhack.ArgonOne",
+                       in_signature='', out_signature='b')
+  def GetPowerControlEnabled(self):
+    return self.daemon.power_control_enabled
+
+  @dbus.service.method("net.clusterhack.ArgonOne",
+                       in_signature='b', out_signature='')
+  def SetPowerControlEnabled(self, enable):
+    if enable:
+      self.daemon.enable_power_control()
+    else:
+      self.daemon.disable_power_control()
+
+  @dbus.service.method("net.clusterhack.ArgonOne",
+                       in_signature='', out_signature='')
+  def Shutdown(self):
+    self.daemon.stop()
+
+  @dbus.service.signal("net.clusterhack.ArgonOne", signature='sv')
+  def NotifyValue(self, name, value):
+    pass
+
+  @dbus.service.signal("net.clusterhack.ArgonOne", signature='s')
+  def NotifyEvent(self, name):
+    pass
+
+
+# Point-of-authority for D-Bus.
+# "Monitors" D-Bus, and "controls" signal emmissions.
+# Anything related to D-Bus should be delegated here.
+class DBusServerThread(Thread):
   def __init__(self, daemon: 'ArgonDaemon', *args, **kwargs):
     super().__init__(*args, **kwargs)
-    self._daemon = daemon
+    self.daemon = daemon  # XXX use weakref?
+    self.argon = None
 
-  def _get_temperature(self) -> float:
-    return self._daemon.temperature
-
-  def _get_fan_speed(self) -> int:
-    return self._daemon.fan_speed
-
-  def _set_fan_speed(self, speed: int) -> None:
-    self._daemon.fan_speed = speed
-
-  def _disable_fan_control(self) -> None:
-    self._daemon.disable_fan_control()
-
-  def _enable_fan_control(self) -> None:
-    self._daemon.enable_fan_control()
-
-  def _is_fan_control_enabled(self) -> bool:
-    return self._daemon.fan_control_enabled
-
-  def _disable_power_control(self) -> None:
-    self._daemon.disable_power_control()
-
-  def _enable_power_control(self) -> None:
-    self._daemon.enable_power_control()
-
-  def _is_power_control_enabled(self) -> bool:
-    return self._daemon.power_control_enabled
-
-  def _shutdown(self) -> None:
-    log.info("Shutdown requested")
-    # Stop fan first
-    self._daemon.disable_fan_control()
-    self._daemon.fan_speed = 0
-    # Finally, stop server
-    # XXX - Executes in a separate thread, as a workaround to avoid deadlock, which would happen
-    #  because _daemon.stop() -> rpc_thread.stop() -> server.shutdown() which waits on condition var...
-    Thread(target=self._daemon.stop).start()
-    #self._daemon.stop()
+  def notify(self, name: str, value: Optional[Union[bool, int, str]] = None) -> None:
+    if self.argon is None:
+      return
+    if value is not None:
+      self.argon.NotifyValue(name, value)
+    else:
+      self.argon.NotifyEvent(name)
 
   def run(self) -> None:
-    log.info("RPC server initialization")
-    if os.path.exists(_RPC_SOCK_PATH):
-      os.remove(_RPC_SOCK_PATH)
-    self._server = rpc.UnixXMLRPCServer(_RPC_SOCK_PATH, socket_permissions=0o770, logger=log)
-    self._server.register_function(self._get_temperature, 'get_temperature')
-    self._server.register_function(self._get_fan_speed, 'get_fan_speed')
-    self._server.register_function(self._set_fan_speed, 'set_fan_speed')
-    self._server.register_function(self._disable_fan_control, 'disable_fan_control')
-    self._server.register_function(self._enable_fan_control, 'enable_fan_control')
-    self._server.register_function(self._is_fan_control_enabled, 'is_fan_control_enabled')
-    self._server.register_function(self._disable_power_control, 'disable_power_control')
-    self._server.register_function(self._enable_power_control, 'enable_power_control')
-    self._server.register_function(self._is_power_control_enabled, 'is_power_control_enabled')
-    self._server.register_function(self._shutdown, 'shutdown')
-    log.info("RPC server thread starting")
+    log.info("D-Bus server initialization")
+    dbus_loop = dbus.mainloop.glib.DBusGMainLoop()
+    system_bus = dbus.SystemBus(mainloop=dbus_loop)
     try:
-      self._server.serve_forever()
+      name = dbus.service.BusName("net.clusterhack.ArgonOne", system_bus)  # noqa: F841
+      self.argon = ArgonOne(system_bus, self.daemon)
+      self.mainloop = GLib.MainLoop()
+      log.info("D-Bus server thread starting")
+      self.mainloop.run()
     finally:
-      os.remove(_RPC_SOCK_PATH)
-    log.info("RPC server thread exiting")
+      system_bus.close()
+    log.info("D-Bus server thread exiting")
 
   def stop(self) -> None:
-    # XXX - This needs to run in a thread other than the one which invoked run()!
-    self._server.shutdown()
-    self._server.server_close()
-    try:  # XXX - Is this necessary (given finally in run())?
-      os.remove(_RPC_SOCK_PATH)
-    except IOError:
-      pass
+    self.mainloop.quit()  # XXX - use GLib.idle_add ?
 
 
+# Coordinates the three types of monitor & control threads,
+# delegating requests accordingly.
 class ArgonDaemon:
   @staticmethod
   def load_config() -> Optional[dict]:
@@ -339,16 +422,16 @@ class ArgonDaemon:
     hysteresis = fan_config.get('hysteresis_sec', 30.0)
     poll_interval = fan_config.get('poll_interval_sec', 10.0)
     fan_control_enabled = fan_config.get('enabled', True)
-    self._fan_control_thread = FanControlThread(fan_lut, hysteresis, poll_interval)
+    self._fan_control_thread = FanControlThread(self, fan_lut, hysteresis, poll_interval)
     if not fan_control_enabled:
       self._fan_control_thread.pause_control()
     reboot_cmd = power_config.get('reboot_cmd', 'sudo reboot')
     shutdown_cmd = power_config.get('shutdown_cmd', 'sudo shutdown -h now')
     power_control_enabled = power_config.get('enabled', True)
-    self._power_control_thread = PowerControlThread(reboot_cmd, shutdown_cmd)
+    self._power_control_thread = PowerControlThread(self, reboot_cmd, shutdown_cmd)
     if not power_control_enabled:
       self._power_control_thread.disable_control()
-    self._rpc_thread = RPCThread(self)
+    self._dbus_thread = DBusServerThread(self)
 
   @property
   def fan_speed(self) -> int:
@@ -382,32 +465,36 @@ class ArgonDaemon:
   def enable_power_control(self) -> None:
     self._power_control_thread.enable_control()
 
+  def notify(self, name: str, value: Optional[Union[bool, float, int]] = None) -> None:
+    self._dbus_thread.notify(name, value)
+
   def start(self) -> None:
     log.info("Daemon starting")
+    self._dbus_thread.start()
     self._power_control_thread.start()
     self._fan_control_thread.start()
-    self._rpc_thread.start()
 
   def stop(self) -> None:
     log.info("Daemon stopping")
-    self._power_control_thread.stop()
+    # Stop in reverse start order
     self._fan_control_thread.stop()
-    self._rpc_thread.stop()
+    self._power_control_thread.stop()
+    self._dbus_thread.stop()
 
   def wait(self) -> None:
-    self._power_control_thread.join()
     self._fan_control_thread.join()
-    self._rpc_thread.join()
-
-  def close(self) -> None:
-    # self._rpc_thread.close()
-    pass
+    self._power_control_thread.join()
+    self._dbus_thread.join()
 
 
 @contextmanager
-def daemon_client() -> rpc.UnixServerProxy:
-  try:
-    proxy = rpc.UnixServerProxy(_RPC_SOCK_PATH)
-    yield proxy
-  finally:
-    proxy('close')()
+def dbus_proxy(dbus_loop: Optional[dbus.mainloop.NativeMainLoop] = None) -> dbus.proxies.Interface:
+    # mainloop must be specified if one will be used
+    system_bus = dbus.SystemBus(mainloop=dbus_loop)
+    try:
+      proxy = system_bus.get_object('net.clusterhack.ArgonOne',
+                                    '/net/clusterhack/ArgonOne')
+      iface = dbus.Interface(proxy, 'net.clusterhack.ArgonOne')
+      yield iface
+    finally:
+      system_bus.close()

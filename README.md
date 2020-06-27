@@ -15,9 +15,10 @@ I just got an Argon One case recently, I had a free weekend, and this provided a
 The main differences from the Argon40 script are:
 
 * The daemon is much more configurable, via `/etc/argonone.yaml`.
-* The daemon can be queried via local IPC; the `argonctl` command-line utility provides a convenient way to do that.
+* The daemon registers a system D-Bus service, which publishes notification signals, as well as methods to query and control it.
 * The daemon does not run as root.
-* Users can be selectively granted permission to query and control the daemon (via `argonctl`).
+* Users can be selectively granted permission to control the daemon (all users can query it).
+* The `argonctl` commandline utility provides an easy way to query/control over D-Bus.
 * The daemon is installed as a systemd service.
 * The package is "debianized" natively, and can be easily installed via `dpkg` or `apt`.
 
@@ -26,10 +27,10 @@ The main differences from the Argon40 script are:
 Simply download the `.deb` file and install it via
 
 ```shell
-sudo apt install argon1_x.y-n.deb
+sudo apt install argon1_x.y.z.deb
 ```
 
-where `x.y-n` is the package version.
+where `x.y.z` is the package version.
 
 If the installer detects user accounts other than `pi`, it will prompt you to grant permission to control the daemon.  If you wish to add users yourself (e.g., if you want to selectively add a subset of user accounts, or if you create additional user accounts at a later time), you simply need to add them to the `argonone` group via
 
@@ -65,10 +66,17 @@ sudo systemctl argonone restart
 
 Finally, note that the `enabled` configuration values simply determine the _initial_ "paused"/"unpaused" state of each daemon component each time the daemon starts up.  However, this state can be toggled while the server is running, via the `argonctl` utility. For all other settings you _must_ restart the daemon (after editing `/etc/argonone.yaml`) to change them.
 
-# Troubleshooting
+# Troubleshooting and monitoring
 
 As stated earlier, you are on your own here! :)  However, you may wish to start by inspecting the systemd logs, e.g., via
 
 ```shell
 systemctl status argonone
 ```
+
+Furthermore, if you wish to monitor all daemon events, you can do so via, e.g.,
+
+```shell
+dbus-monitor --system "sender='net.clusterhack.ArgonOne'"
+```
+

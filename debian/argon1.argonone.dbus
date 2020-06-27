@@ -1,0 +1,52 @@
+<!DOCTYPE busconfig PUBLIC
+          "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
+          "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+<busconfig>
+
+  <!-- Only root or user argonone can own the ArgonOne service -->
+  <policy user="argonone">
+    <allow own="net.clusterhack.ArgonOne"/>
+  </policy>
+  <policy user="root">
+    <allow own="net.clusterhack.ArgonOne"/>
+  </policy>
+
+  <!-- Allow anyone to invoke methods on daemon, except Set* and Shutdown -->
+  <policy context="default">
+    <allow send_destination="net.clusterhack.ArgonOne"/>
+    <allow receive_sender="net.clusterhack.ArgonOne"/>
+
+    <deny send_destination="net.clusterhack.ArgonOne"
+          send_interface="net.clusterhack.ArgonOne" send_member="Shutdown"/>
+
+    <deny send_destination="net.clusterhack.ArgonOne"
+          send_interface="net.clusterhack.ArgonOne" send_member="SetFanSpeed"/>
+
+    <deny send_destination="net.clusterhack.ArgonOne"
+          send_interface="net.clusterhack.ArgonOne" send_member="SetFanControlEnabled"/>
+
+    <deny send_destination="net.clusterhack.ArgonOne"
+          send_interface="net.clusterhack.ArgonOne" send_member="SetPowerControlEnabled"/>
+  </policy>
+
+  <!-- Allow group argonone to invoke all methods (including Set*) except Shutdown -->
+  <policy group="argonone">
+    <allow send_destination="net.clusterhack.ArgonOne"/>
+    <allow receive_sender="net.clusterhack.ArgonOne"/>
+
+    <deny send_destination="net.clusterhack.ArgonOne"
+      send_interface="net.clusterhack.ArgonOne" send_member="Shutdown"/>
+  </policy>
+
+  <!-- Allow users root and argonone to invoke all methods (including Shutdown) -->
+  <policy user="argonone">
+    <allow send_destination="net.clusterhack.ArgonOne"/>
+    <allow receive_sender="net.clusterhack.ArgonOne"/>
+  </policy>
+  <policy user="root">
+    <allow send_destination="net.clusterhack.ArgonOne"/>
+    <allow receive_sender="net.clusterhack.ArgonOne"/>
+  </policy>
+
+</busconfig>
+

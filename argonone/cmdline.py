@@ -6,7 +6,7 @@
 # WITHOUT WARRANTY OF ANY KIND, either express or implied.
 
 import sys
-from . import ArgonDaemon, daemon_client
+from . import ArgonDaemon, dbus_proxy
 
 
 def _error_message(msg: str) -> None:
@@ -18,34 +18,48 @@ def _error_exit(error_msg: str, exit_status: int = 1) -> None:
   sys.exit(exit_status)
 
 
+# Dictionary values are (dbus_method_name, arg0, arg1, ...)
+# where argN is either a constant or a function to parse a string into value
+# with restriction that functions cannot succeed constants (not validate)
+# TODO validate restriction somewhere?
 _argonctl_cmd_aliases = {
-  'temperature': 'get_temperature',
-  'get_temp': 'get_temperature', 'temp': 'get_temperature',
-  'get_speed': 'get_fan_speed', 'speed': 'get_fan_speed',
-  'set_speed': 'set_fan_speed',
-  'pause_fan': 'disable_fan_control', 'pause': 'disable_fan_control',
-  'resume_fan': 'enable_fan_control', 'resume': 'enable_fan_control',
-  'fan_status': 'is_fan_control_enabled',
-  'power_status': 'is_power_control_enabled',
+  'temperature': 'GetTemperature', 'temp': 'GetTemperature',
+  'speed': 'GetFanSpeed',
+  'set_speed': ('SetFanSpeed', int),
+  'pause_fan': ('SetFanControlEnabled', False), 'pause': ('SetFanControlEnabled', False),
+  'resume_fan': ('SetFanControlEnabled', True), 'resume': ('SetFanControlEnabled', True),
+  'fan_status': 'GetFanControlEnabled',
+  'power_status': 'GetPowerControlEnabled',
+  'shutdown': 'Shutdown',
 }
 
 def argonctl_main() -> None:  # noqa: E302
   # Check and parse arguments
   if len(sys.argv) < 2:
-    _error_exit("Command argument is missing")
+    _error_exit("Command name is missing")
   cmd_name = sys.argv[1]
-  cmd_name = _argonctl_cmd_aliases.get(cmd_name, cmd_name)
-  if cmd_name == 'set_fan_speed':
-    if len(sys.argv) != 3:
-      _error_exit("set_fan_speed requires an integer argument")
-    arg_val = int(sys.argv[2])
-  else:
-    if len(sys.argv) != 2:
-      _error_exit("Too many anrguments!")
+  try:
+    cmd_info = _argonctl_cmd_aliases[cmd_name]
+  except KeyError:
+    _error_exit(f"Unrecognized command {cmd_name}")
+  if not isinstance(cmd_info, tuple):
+    cmd_info = (cmd_info,)
+  num_user_args = sum(callable(ai) for ai in cmd_info[1:])  # XXX ugh.. also, see above
+  if len(sys.argv) - 2 != num_user_args:
+    _error_exit("Incorrect arguments for command f{cmd_name}")
+  cmd_args = []
+  for i, arg_info in enumerate(cmd_info[1:]):
+    if callable(arg_info):
+      try:
+        cmd_args.append(arg_info(sys.argv[2 + i]))
+      except:  # noqa: E722
+        _error_exit("Failed to parse argument {i} for command f{cmd_name}")
+    else:
+      cmd_args.append(arg_info)
   # Make RPC call and print any result
-  with daemon_client() as daemon:
-    func = getattr(daemon, cmd_name)
-    retval = func(arg_val) if cmd_name == 'set_fan_speed' else func()
+  with dbus_proxy() as dbus:
+    func = getattr(dbus, cmd_info[0])
+    retval = func(*cmd_args)
     if retval is not None:
       print(retval)
 
@@ -67,8 +81,5 @@ def argondaemon_main() -> None:
     log_format = '%(asctime)s: ' + log_format
   logging.basicConfig(format=log_format, datefmt='%m/%d/%Y %H:%M:%S', level=logging.INFO)
   daemon = ArgonDaemon()
-  try:
-    daemon.start()
-    daemon.wait()
-  finally:
-    daemon.close()
+  daemon.start()
+  daemon.wait()

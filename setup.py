@@ -23,6 +23,7 @@ setup(
     'PyYAML',
     'RPi.GPIO',
     # TODO - python3-smbus deb source is i2c-tools, and package does not show up in pip...
+    # TODO - python3-dbus ??
   ],
 
   # Informational metadata

@@ -25,7 +25,8 @@ Depends:
  ${python3:Depends},
  python3-rpi.gpio,
  python3-smbus,
- python3-yaml
+ python3-yaml,
+ python3-dbus
 Suggests: 
  rsyslog,
  python3-psutil
