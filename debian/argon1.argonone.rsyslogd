@@ -1,1 +1,2 @@
 :programname, isequal, "argonone"	-/var/log/argonone.log
+&					stop
