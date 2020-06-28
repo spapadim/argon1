@@ -8,6 +8,8 @@
 import sys
 from . import ArgonDaemon, dbus_proxy
 
+from typing import Optional, Callable, Sequence
+
 
 def _error_message(msg: str) -> None:
   print(msg, file=sys.stderr)
@@ -18,20 +20,84 @@ def _error_exit(error_msg: str, exit_status: int = 1) -> None:
   sys.exit(exit_status)
 
 
-# Dictionary values are (dbus_method_name, arg0, arg1, ...)
-# where argN is either a constant or a function to parse a string into value
-# with restriction that functions cannot succeed constants (not validate)
-# TODO validate restriction somewhere?
-_argonctl_cmd_aliases = {
-  'temperature': 'GetTemperature', 'temp': 'GetTemperature',
-  'speed': 'GetFanSpeed',
-  'set_speed': ('SetFanSpeed', int),
-  'pause_fan': ('SetFanControlEnabled', False), 'pause': ('SetFanControlEnabled', False),
-  'resume_fan': ('SetFanControlEnabled', True), 'resume': ('SetFanControlEnabled', True),
-  'fan_status': 'GetFanControlEnabled',
-  'fan_lut': 'GetFanSpeedLUT', 'lut': 'GetFanSpeedLUT',
-  'power_status': 'GetPowerControlEnabled',
-  'shutdown': 'Shutdown',
+# Simple class to describe how commandline arguments should be parsed,
+# and how return values should be presented
+class _CmdInfo(object):
+  __slots__ = ['dbus_method', 'arg_fmt', 'return_fmt']
+
+  def __init__(self, dbus_method: str, arg_fmt: Optional = None, return_fmt: Optional[Callable] = None):
+    # We allow arg_fmt to be a single non-sequence item, to avoid singleton literal clutter
+    if arg_fmt is None:
+      arg_fmt = ()
+    if not isinstance(arg_fmt, (tuple, list)):
+      arg_fmt = (arg_fmt,)
+    arg_fmt = tuple(arg_fmt)  # ensure immutable
+
+    # Validate arg_fmt first
+    if arg_fmt is not None:
+      val_seen = False
+      for val_or_func in arg_fmt:
+        if callable(val_or_func):
+          if val_seen:
+            raise ValueError('Callables cannot follow values in arg_fmt')
+        else:  # not is_func
+          val_seen = True
+
+    self.dbus_method = dbus_method
+    self.arg_fmt = arg_fmt
+    self.return_fmt = return_fmt
+
+  @property
+  def num_user_args(self) -> int:
+    return sum(callable(af) for af in self.arg_fmt)  # XXX ugh?
+
+  def call_dbus(self, dbus_proxy, argv: Sequence[str]) -> None:
+    if len(argv) != self.num_user_args:
+      raise ValueError("Wrong number of user-provided arguments (argv)")
+    # Construct argument list for method call
+    dbus_args = []
+    for i, af in enumerate(self.arg_fmt):
+      if callable(af):
+        try:
+          dbus_args.append(af(argv[i]))
+        except:  # noqa: E722
+          raise ValueError(f"Failed to convert arg{i} value for {self.dbus_method}")
+      else:
+        dbus_args.append(af)
+    # Issue RPC and format return value (if needed)
+    dbus_func = getattr(dbus_proxy, self.dbus_method)
+    retval = dbus_func(*dbus_args)
+    if retval is not None and self.return_fmt is not None:
+      retval = self.return_fmt(retval)
+    return retval
+
+
+# Dictionary values are either _CmdInfo or strings.  A string value
+# denotes an alias and should be equal to another key of the dictionary.
+_argonctl_cmds = {
+  'temp': _CmdInfo('GetTemperature'),
+  'temperature': 'temp',
+  
+  'speed': _CmdInfo('GetFanSpeed'),
+  'fan_speed': 'speed',
+  'set_speed': _CmdInfo('SetFanSpeed', int),
+
+  'pause': _CmdInfo('SetFanControlEnabled', False), 
+  'pause_fan': 'pause',
+  'resume': _CmdInfo('SetFanControlEnabled', True), 
+  'resume_fan': 'resume',
+  'fan_status': _CmdInfo('GetFanControlEnabled'),
+
+  'lut': _CmdInfo(
+    'GetFanSpeedLUT',
+    None,
+    lambda pairs: '\n'.join(f"{x if x != -1 else 'default'}: {int(y)}" for x, y in pairs)
+  ),
+  'fan_lut': 'lut',
+
+  'power_status': _CmdInfo('GetPowerControlEnabled'),
+
+  'shutdown': _CmdInfo('Shutdown'),
 }
 
 def argonctl_main() -> None:  # noqa: E302
@@ -40,28 +106,16 @@ def argonctl_main() -> None:  # noqa: E302
     _error_exit("Command name is missing")
   cmd_name = sys.argv[1]
   try:
-    cmd_info = _argonctl_cmd_aliases[cmd_name]
+    # Look up _CmdInfo, resolving aliases
+    cmd_info = cmd_name
+    while isinstance(cmd_info, str):
+      cmd_info = _argonctl_cmds[cmd_info]
   except KeyError:
     _error_exit(f"Unrecognized command {cmd_name}")
-  if not isinstance(cmd_info, tuple):
-    cmd_info = (cmd_info,)
-  num_user_args = sum(callable(ai) for ai in cmd_info[1:])  # XXX ugh.. also, see above
-  if len(sys.argv) - 2 != num_user_args:
-    _error_exit("Incorrect arguments for command f{cmd_name}")
-  cmd_args = []
-  for i, arg_info in enumerate(cmd_info[1:]):
-    if callable(arg_info):
-      try:
-        cmd_args.append(arg_info(sys.argv[2 + i]))
-      except:  # noqa: E722
-        _error_exit("Failed to parse argument {i} for command f{cmd_name}")
-    else:
-      cmd_args.append(arg_info)
   # Make RPC call and print any result
   with dbus_proxy() as dbus:
-    func = getattr(dbus, cmd_info[0])
-    retval = func(*cmd_args)
-    if retval is not None:
+    retval = cmd_info.call_dbus(dbus, sys.argv[2:])
+    if retval:
       print(retval)
 
 
