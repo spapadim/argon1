@@ -26,6 +26,9 @@
           send_interface="net.clusterhack.ArgonOne" send_member="SetFanControlEnabled"/>
 
     <deny send_destination="net.clusterhack.ArgonOne"
+          send_interface="net.clusterhack.ArgonOne" send_member="SetFanSpeedLUT"/>
+
+    <deny send_destination="net.clusterhack.ArgonOne"
           send_interface="net.clusterhack.ArgonOne" send_member="SetPowerControlEnabled"/>
   </policy>
 

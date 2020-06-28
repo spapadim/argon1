@@ -37,6 +37,7 @@ NOTIFY_VALUE_FAN_CONTROL_ENABLED = "fan_control_enabled"
 NOTIFY_VALUE_POWER_CONTROL_ENABLED = "power_control_enabled"
 NOTIFY_EVENT_SHUTDOWN = "shutdown_request"
 NOTIFY_EVENT_REBOOT = "reboot_request"
+NOTIFY_EVENT_FAN_SPEED_LUT_CHANGED = "fan_speed_lut_changed"
 
 
 ############################################################################
@@ -115,6 +116,16 @@ class StepFunction(Generic[T]):  # noqa: E302
         thresholds.append(x)
       values.append(y)
     # Construct step function object
+    return cls(thresholds, values)
+
+  @classmethod
+  def from_iterator(cls, lut_iter: ItemIterator) -> 'StepFunction[T]':
+    thresholds = []
+    values = []
+    for thr, val in lut_iter:
+      if thr is not None:
+        thresholds.append(thr)
+      values.append(val)
     return cls(thresholds, values)
 
   def __init__(self, thresholds: Sequence[float], values: Sequence[T]):
@@ -229,13 +240,14 @@ class PowerControlThread(Thread):
 # Monitors temperature, and controls fan.
 # Anything related to fan and temperature should be delegated here.
 class FanControlThread(Thread):
-  def __init__(self, daemon: 'ArgonDaemon', fan_speed_lut: StepFunction,
+  def __init__(self, daemon: 'ArgonDaemon', fan_speed_lut: StepFunction[float],
                hysteresis_sec: float, poll_interval_sec: float, *args, **kwargs):
     super().__init__(*args, **kwargs)
     self.daemon = daemon  # XXX use weakref?
-    self._fan = Fan()
+    self._fan = Fan()  # Need to guard direct access with mutex
     self._fan_mutex = Lock()
-    self._fan_speed_lut = fan_speed_lut
+    self._fan_speed_lut = fan_speed_lut  # Need to guard direct access with mutex
+    self._fan_speed_lut_mutex = Lock()
     self._poll_interval = poll_interval_sec
     self._hysteresis = hysteresis_sec  # How long to wait before reducing speed
     self._temperature = get_pi_temperature()
@@ -257,8 +269,17 @@ class FanControlThread(Thread):
       self.daemon.notify(NOTIFY_VALUE_FAN_SPEED, self._fan.speed)
 
   @property
-  def fan_lut(self) -> StepFunction.ItemIterator:
-    return self._fan_speed_lut.items()
+  def fan_speed_lut(self) -> StepFunction[float].ItemIterator:
+    with self._fan_speed_lut_mutex:
+      return self._fan_speed_lut.items()
+
+  @fan_speed_lut.setter
+  def fan_speed_lut(self, lut: Union[StepFunction[float], StepFunction[float].ItemIterator]) -> None:
+    if not isinstance(lut, StepFunction):
+      lut = StepFunction.from_iterator(lut)
+    with self._fan_speed_lut_mutex:
+      self._fan_speed_lut = lut
+    self.daemon.notify(NOTIFY_EVENT_FAN_SPEED_LUT_CHANGED)
 
   @property
   def control_enabled(self) -> bool:
@@ -281,7 +302,8 @@ class FanControlThread(Thread):
       self._temperature = get_pi_temperature()
       self.daemon.notify(NOTIFY_VALUE_TEMPERATURE, self._temperature)
       if self._control_enabled:
-        speed = round(self._fan_speed_lut(self._temperature))
+        with self._fan_speed_lut_mutex:
+          speed = round(self._fan_speed_lut(self._temperature))
         if speed != self.fan_speed:
           log.info(f"Adjusting fan speed to {speed} for temperature {self._temperature}")
           self.fan_speed = speed
@@ -296,8 +318,9 @@ class FanControlThread(Thread):
 ############################################################################
 # D-Bus service
 
-# class ArgonOneException(dbus.DBusException):
-#   _dbus_error_name = 'net.clusterhack.ArgonOneException'
+class ArgonOneException(dbus.DBusException):
+  _dbus_error_name = 'net.clusterhack.ArgonOneException'
+
 
 # XXX python-dbus does not like type annotations
 class ArgonOne(dbus.service.Object):
@@ -332,6 +355,27 @@ class ArgonOne(dbus.service.Object):
       self.daemon.enable_fan_control()
     else:
       self.daemon.disable_fan_control()
+
+  @dbus.service.method("net.clusterhack.ArgonOne",
+                       in_signature='', out_signature='a(dd)')
+  def GetFanSpeedLUT(self):
+    lut_list = list(self.daemon.fan_speed_lut)
+    # None doesn't match D-Bus return signature, so replace with -1
+    assert lut_list[0][0] is None
+    lut_list[0] = (-1, lut_list[0][1])
+    return lut_list
+
+  @dbus.service.method("net.clusterhack.ArgonOne",
+                       in_signature='a(dd)', out_signature='')
+  def SetFanSpeedLUT(self, lut_pairs):
+    if len(lut_pairs) < 1 or lut_pairs[0][0] != -1:
+      raise ArgonOneException("First LUT entry must be default value, with threshold of -1")
+    lut_pairs[0][0] = None  # Couldn't do None with a clean D-Bus signature
+    try:
+      lut = StepFunction.from_iterator(lut_pairs)
+    except ValueError as exc:
+      raise ArgonOneException(f"Failed to parse LUT: {str(exc)}")
+    self.daemon.fan_speed_lut = lut
 
   @dbus.service.method("net.clusterhack.ArgonOne",
                        in_signature='', out_signature='b')
@@ -454,6 +498,14 @@ class ArgonDaemon:
 
   def enable_fan_control(self) -> None:
     self._fan_control_thread.enable_control()
+
+  @property
+  def fan_speed_lut(self) -> StepFunction[float].ItemIterator:
+    return self._fan_control_thread.fan_speed_lut
+
+  @fan_speed_lut.setter
+  def fan_speed_lut(self, lut: Union[StepFunction[float], StepFunction[float].ItemIterator]) -> None:
+    self._fan_control_thread.fan_speed_lut = lut
 
   @property
   def power_control_enabled(self) -> bool:

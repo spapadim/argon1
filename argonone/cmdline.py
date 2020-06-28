@@ -29,6 +29,7 @@ _argonctl_cmd_aliases = {
   'pause_fan': ('SetFanControlEnabled', False), 'pause': ('SetFanControlEnabled', False),
   'resume_fan': ('SetFanControlEnabled', True), 'resume': ('SetFanControlEnabled', True),
   'fan_status': 'GetFanControlEnabled',
+  'fan_lut': 'GetFanSpeedLUT', 'lut': 'GetFanSpeedLUT',
   'power_status': 'GetPowerControlEnabled',
   'shutdown': 'Shutdown',
 }
