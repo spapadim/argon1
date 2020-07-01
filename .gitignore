@@ -1,9 +1,18 @@
+#########################
+# Project-specific
+
+# For debian build directories, see "Debian" section
+
+/attic/
+
 
 #########################
 # Debian
 
-# dpkg build directory
+# dpkg build directories (project-specific)
+/debian/python3-argonone/
 /debian/argon1/
+/debian/lxplug-argon1/
 
 # auto-generated files
 /debian/tmp/
@@ -18,6 +27,19 @@
 
 # pybuild
 .pybuild/
+
+
+#########################
+# C/C++
+
+# Object files
+*.o
+*.so
+
+# clangd language server
+compile_commands.json
+.clangd/
+
 
 #########################
 # Python
