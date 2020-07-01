@@ -1,0 +1,69 @@
+.de URL
+\\$2 \(laURL: \\$1 \(ra\\$3
+..
+.if \n[.g] .mso www.tmac
+.TH ARGONCTL 1  "June 2020"  https://git.io/argon1
+.SH NAME
+argonctl \- modify files by randomly changing bits
+.SH SYNOPSIS
+.B argonctl
+\fIcommand\fR
+[\fIarg\fR ...]
+.SH DESCRIPTION
+.B argonctl
+is a command-line utility to query and control the \fBargononed\fR daemon.
+It simply translates it's arguments into D-Bus method calls.  Therefore,
+D-Bus access rights apply: any user can issue query commands, but only
+users that belong to the argonone group can issue commands that modify
+the daemon's state or configuration (e.g., set speed, enable/disable control
+features, etc).
+.SH COMMANDS
+.TP
+.BR temp ", " temperature
+Print the current CPU temperature value. Note that this is updated based on regular polling,
+so it may lag actual temperature by the polling interval (dy default, 10 seconds). 
+.TP
+.BR speed ", " fan_speed 
+Print the current fan speed.  The output is an integer between 0 (off) and 100 (maximum).
+.TP
+.BR set_speed " " \fIvalue\fR
+Set the fan speed. The argument is required and must be an integer between 0 and 100 (inclusive).
+This command does not change temperature-based control. Therefore, if control is enabled, the
+fan speed will be updated according to the lookup table when temperature is polled.
+.TP
+.BR pause ", " pause_fan
+Disables temperature-based fan control.  Fan speed will remain at what it was when the
+command was issued.  Therefore, if you wish to turn the fan off, you also need to issue a 
+\fBset_speed\fR command.  Although fan speed will no longer be set based on CPU temperature
+(and the daemon's look up table), the CPU temperature will still be polled and updated.
+If fan control was already disabled, this command has no effect.
+.TP
+.BR resume ", " resume_fan
+Enables temperature-based fan control.  If fan control was enabled, this command has no effect
+.TP
+.BR fan_status
+Shows whether temperature-based fan control is enabled.  Outputs 1 if enabled and 0 if disabled.
+.TP
+.BR lut ", " fan_lut
+Prints out the lookup table (LUT) for temperature-based fan speed control.
+.TP
+.BR pause_button " / " resume_button " / " button_status
+Similar to the pause/resume/status commands for temperature-based fan control, but for
+button-based shutdown/reboot control.  When button-based power state control is disabled,
+button presses \fIare\fR monitored (and D-Bus signals are emitted), but the daemon itself
+does not issue system shutdown or reboot commands itself.  This is similar to 
+disabling temperature-based fan speed control: temperature is monitored (and D-Bus signals
+emmitted), but the daemon itself does not issue fan speed commands.
+.TP
+.BR shutdown
+This is a special command, reserved \fIonly\fR for root and argonone system user.  It should
+\fInot\fR be used directly. Users should shut down the daemon using \fBsystemctl\fR instead.
+.SH COPYRIGHT
+Copyright \(co 2020 Spiros Papadimitriou 
+.PP
+This software is released under the 
+.URL "https://opensource.org/licenses/MIT" "MIT License"
+and it is distributed on an "AS IS" basis,
+WITHOUT WARRANTY OF ANY KIND, either express or implied.
+.SH SEE ALSO
+.URL "https://github.com/spapadim/argon1" "Argon1 homepage"
