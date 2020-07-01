@@ -8,15 +8,20 @@
 # Set defaults, if not already defined
 INSTALL ?= /usr/bin/install
 INSTALL_DATA ?= $(INSTALL) -m 0644
-
+CLANG ?= /usr/bin/clang-9
 
 all: argonone.so
+
+.PHONY: clean distclean install uninstall
 
 argonone.so: argonone.c
 	$(CC) $(CFLAGS) -Wall `pkg-config lxpanel --cflags` -shared -fPIC argonone.c -o argonone.so `pkg-config --libs lxpanel`
 
 clean:
 	rm -f argonone.so
+
+distclean: clean
+	rm -f compile_commands.json
 
 install: all
 	$(INSTALL) -m 0644 argonone.so $(DESTDIR)`pkg-config --variable=pluginsdir lxpanel`/
@@ -30,3 +35,10 @@ uninstall:
 	rm -v $(DESTDIR)/usr/share/icons/hicolor/{16x16,24x24}/status/argonone-fan.png
 	rm -v $(DESTDIR)/usr/share/icons/hicolor/{16x16,24x24}/status/argonone-fan-paused.png
 
+compile_commands.json: SHELL:=/bin/bash
+compile_commands.json: argonone.c
+	$(CLANG) -MJ >( sed -e '1s/^/[\n/' -e '$$s/,$$/\n]/' > compile_commands.json ) \
+			$(CFLAGS) -Wall `pkg-config lxpanel --cflags` -shared -fPIC argonone.c -o argonone.so `pkg-config --libs lxpanel`
+#	$(CLANG) -MJ argonone.so.json $(CFLAGS) -Wall `pkg-config lxpanel --cflags` -shared -fPIC argonone.c -o argonone.so `pkg-config --libs lxpanel`
+#	sed -e '1s/^/[\n/' -e '$$s/,$/\n]/' *.so.json > compile_commands.json
+#	rm *.so.json
