@@ -95,7 +95,9 @@ _argonctl_cmds = {
   ),
   'fan_lut': 'lut',
 
-  'power_status': _CmdInfo('GetPowerControlEnabled'),
+  'pause_button': _CmdInfo('SetPowerControlEnabled', False),
+  'resume_button': _CmdInfo('SetPowerControlEnabled', True),
+  'button_status': _CmdInfo('GetPowerControlEnabled'),
 
   'shutdown': _CmdInfo('Shutdown'),
 }
