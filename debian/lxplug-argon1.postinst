@@ -1,0 +1,14 @@
+#!/bin/sh
+
+. /usr/share/debconf/confmodule
+
+if [ -n "$DEBIAN_SCRIPT_DEBUG" ]; then set -v -x; DEBIAN_SCRIPT_TRACE=1; fi
+${DEBIAN_SCRIPT_TRACE:+ echo "#42#DEBUG# RUNNING $0 $*" 1>&2 }
+
+gtk-update-icon-cache /usr/share/icons/hicolor
+
+# Display information message about restarting lxpanel
+db_input high lxplug-argon1/restart-lxpanel-information || true
+db_go
+
+exit 0

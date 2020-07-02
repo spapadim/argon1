@@ -1,9 +1,35 @@
 #!/usr/bin/make -f
 
-export PYBUILD_NAME=argonone
+export PYBUILD_DESTDIR=debian/tmp
 
 %:
 	dh $@ --with python3,sysuser --buildsystem=pybuild
+
+################################################################
+# Add "secondary" makefile build (must use overrides)
+
+override_dh_clean:
+	dh_clean -O--buildsystem=pybuild
+	$(MAKE) clean
+
+override_dh_auto_build:
+	dh_auto_build -O--buildsystem=pybuild
+	$(MAKE) all DESTDIR=${CURDIR}/debian/tmp
+
+override_dh_auto_install:
+	dh_auto_install -O--buildsystem=pybuild
+	$(MAKE) install DESTDIR=${CURDIR}/debian/tmp
+
+################################################################
+# lxpanel plugins are not shared libraries
+
+override_dh_makeshlibs:
+	dh_makeshlibs -X/plugins/
+
+override_dh_shlibdeps:
+	dh_shlibdeps -X/plugins/
+
+################################################################
 
 override_dh_installsystemd:
 	dh_installsystemd --name=argonone

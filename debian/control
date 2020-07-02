@@ -8,7 +8,8 @@ Build-Depends:
  dh-sysuser,
  dh-python,
  python3-all,
- python3-setuptools
+ python3-setuptools,
+ lxpanel-dev
 VCS-Git: https://github.com/spapadim/argon1.git
 VCS-Browser: https://github.com/spapadim/argon1
 Standards-Version: 4.5.0
@@ -32,6 +33,26 @@ Suggests:
  python3-psutil
 Description: Alternative implementation for Argon One case fan and power control
  This is an alternative implementation for fan and power control of
- the Argon One Raspberry Pi case. This is a personal mini-project;
- it is not affiliated in any way with Argon40, nor endorsed by them.
+ the Argon One Raspberry Pi case. 
+ .
+ This is a personal mini-project; it is not affiliated in any way with Argon40,
+ nor endorsed or supported by them.
+
+Package: lxplug-argon1
+Architecture: armhf
+Pre-Depends:
+ ${misc:Pre-Depends}
+Depends:
+ lsb-base,
+ ${misc:Depends},
+ ${shlibs:Depends},
+ lxpanel,
+ argon1
+Description: LXPanel plugin for Argon One fan control service
+ An LXPanel plugin for the alternative implementation of fan and power control
+ service for the Argon One Raspberry Pi case. It displays current fan speed,
+ and allows authorized users to pause or resume temperature-based control.
+ .
+ This is a personal mini-project; it is not affiliated in any way with Argon40,
+ nor endorsed or supported by them.
 

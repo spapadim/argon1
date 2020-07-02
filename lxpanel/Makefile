@@ -23,8 +23,11 @@ clean:
 distclean: clean
 	rm -f compile_commands.json
 
+install: SHELL:=/bin/bash
 install: all
+	$(INSTALL) -d $(DESTDIR)`pkg-config --variable=pluginsdir lxpanel`/
 	$(INSTALL) -m 0644 argonone.so $(DESTDIR)`pkg-config --variable=pluginsdir lxpanel`/
+	$(INSTALL) -d $(DESTDIR)/usr/share/icons/hicolor/{16x16,24x24}/status
 	$(INSTALL_DATA) argonone-fan_16.png $(DESTDIR)/usr/share/icons/hicolor/16x16/status/argonone-fan.png
 	$(INSTALL_DATA) argonone-fan_24.png $(DESTDIR)/usr/share/icons/hicolor/24x24/status/argonone-fan.png
 	$(INSTALL_DATA) argonone-fan-paused_16.png $(DESTDIR)/usr/share/icons/hicolor/16x16/status/argonone-fan-paused.png

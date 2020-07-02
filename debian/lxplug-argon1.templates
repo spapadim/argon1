@@ -1,0 +1,9 @@
+Template: lxplug-argon1/restart-lxpanel-information
+Type: note
+Description: Restarting lxpanel
+ If lxpanel is already running, it will not pick up new plugins. Therefore,
+ if you are already logged in to a graphical session, you need to restart it.
+ You can either open a terminal and issue the command
+    lxpanelctl restart
+ or you can simply log out and log back in.
+

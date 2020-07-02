@@ -2,3 +2,6 @@
 argonone.yaml => etc/argonone.yaml
 debian/argon1.argonone.rsyslogd => etc/rsyslog.d/argonone.conf
 debian/argon1.argonone.dbus => etc/dbus-1/system.d/argonone.conf
+#
+usr/bin/*
+usr/lib/python*/dist-packages
