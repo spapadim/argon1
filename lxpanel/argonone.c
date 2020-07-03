@@ -9,6 +9,7 @@
 
 #include <errno.h>
 #include <locale.h>
+#include <lxpanel/conf.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -43,13 +44,15 @@ typedef struct {
   GDBusProxy *proxy;
   
   /* "Model" part of UI */
+  gboolean show_label;
+  gboolean include_temperature;
   gint32 fan_speed;
   gdouble temperature;
   gboolean is_fan_control_enabled;
 } ArgonOnePlugin;
 
 
-static void argonone_update_view (ArgonOnePlugin *aone);
+static void argonone_update_view (ArgonOnePlugin *aone, gboolean config_updated);
 
 
 /***********************************************
@@ -76,18 +79,26 @@ static void argonone_dbus_signal(GDBusProxy *proxy, gchar *sender_name,
   }
 
   /* Refresh UI view */
-  argonone_update_view(aone);
+  argonone_update_view(aone, FALSE);
 }
 
 GVariant *argonone_dbus_method_call_sync(GDBusProxy *proxy, const gchar *method_name, GVariant *parameters) {
   GError *error = NULL;
-  GVariant *retval = g_dbus_proxy_call_sync(proxy, method_name, NULL, 0, -1, NULL, &error);
+
+  
+  if (parameters != NULL && !g_variant_is_of_type(parameters, G_VARIANT_TYPE_TUPLE)) {
+    GVariant **t = (GVariant *[]){ parameters };
+    parameters = g_variant_new_tuple(t, 1);
+  }
+
+  GVariant *retval = g_dbus_proxy_call_sync(proxy, method_name, parameters, 0, -1, NULL, &error);
   if (error) {
     DEBUG("Failed to call %s method: %s", method_name, error->message);
     g_error_free(error);
   }
   return retval;
 }
+
 
 gboolean argonone_dbus_query_sync(GDBusProxy *proxy, const gchar *method_name, const gchar *return_format_string, gpointer value) {
   GVariant *retval;
@@ -99,12 +110,10 @@ gboolean argonone_dbus_query_sync(GDBusProxy *proxy, const gchar *method_name, c
   return TRUE;
 }
 
-
 /***********************************************
  * Plugin popup menu                           */
 
 /* TODO should we use async call for menu handlers, esp since there is no return value? */
-
 static void _argonone_set_fan(ArgonOnePlugin *aone, gboolean enabled, gint32 fan_speed) {
   argonone_dbus_method_call_sync(aone->proxy, "SetFanControlEnabled", g_variant_new_boolean(enabled));
   if (fan_speed >= 0)  /* -1 denotes "keep current" */
@@ -159,6 +168,51 @@ static void argonone_popup_menu_set_position(GtkMenu *menu, gint *px, gint *py, 
 }
 
 /***********************************************
+ * Configuration settings                      */
+
+static void argonone_update_from_settings(ArgonOnePlugin *aone) {
+  int value;
+  if (config_setting_lookup_int (aone->settings, "ShowLabel", &value))
+    aone->show_label = (value == 1);
+  if (config_setting_lookup_int (aone->settings, "IncludeTemperature", &value))
+    aone->include_temperature = (value == 1);
+}
+
+/* Handler for system config changed message from panel */
+static void argonone_configuration_changed(LXPanel *panel, GtkWidget *widget)
+{
+    ArgonOnePlugin *aone = lxpanel_plugin_get_data(widget);
+    argonone_update_from_settings(aone);
+    argonone_update_view(aone, TRUE);
+}
+
+static gboolean argonone_apply_configuration(gpointer user_data)
+{
+    ArgonOnePlugin *aone = lxpanel_plugin_get_data((GtkWidget *)user_data);
+
+    config_group_set_int(aone->settings, "ShowLabel", (int)aone->show_label);
+    config_group_set_int(aone->settings, "IncludeTemperature", (int)aone->include_temperature);
+
+    argonone_update_view(aone, TRUE);
+
+    return TRUE;
+}
+
+static GtkWidget *argonone_configure_dialog(LXPanel *panel, GtkWidget *widget)
+{
+    ArgonOnePlugin *aone = lxpanel_plugin_get_data(widget);
+
+    /* No chance we will reject settings, so we use aone->{show_label,include_temperature} */
+    return lxpanel_generic_config_dlg(
+      "ArgonOne fan", panel,
+      argonone_apply_configuration, widget,
+      "Show label", &aone->show_label, CONF_TYPE_BOOL,
+      "Include temperature", &aone->include_temperature, CONF_TYPE_BOOL,
+      NULL
+    );
+}
+
+/***********************************************
  * Plugin widget                               */
 
 static gboolean argonone_button_press_event(GtkWidget *widget, GdkEventButton *event, LXPanel *panel) {
@@ -181,19 +235,40 @@ static gboolean argonone_button_press_event(GtkWidget *widget, GdkEventButton *e
   return FALSE;
 }
 
+#define STATUS_SIZE 32  /* Should never exceed 12 chars +1 '\0' -> 13 bytes */
+
 /* Update all widgets, based on current plugin properties */
-static void argonone_update_view (ArgonOnePlugin *aone) {
+static void argonone_update_view (ArgonOnePlugin *aone, gboolean config_updated) {
+  gchar status[STATUS_SIZE];
+  gint speed_len;
+
   /* Update icon */
   lxpanel_plugin_set_taskbar_icon(
       aone->panel, aone->tray_icon,
       aone->is_fan_control_enabled ? "argonone-fan" : "argonone-fan-paused");
-  /* Update label text */
+
+  if (config_updated)
+    gtk_widget_set_visible(aone->tray_label, aone->show_label);
+
+  /* Construct status string with fan speed and (optionally) temperature */
   if (aone->fan_speed < 0) {
-    gtk_label_set_text(GTK_LABEL(aone->tray_label), " --");
+    speed_len = g_snprintf(status, STATUS_SIZE, " -- ");
   } else {
-    gchar *label_text = g_strdup_printf("%3d", aone->fan_speed);
-    gtk_label_set_text(GTK_LABEL(aone->tray_label), label_text);
-    g_free(label_text);
+    speed_len = g_snprintf(status, STATUS_SIZE, "%3d%%", aone->fan_speed);
+  }
+  if (aone->include_temperature) {
+    g_snprintf(status + speed_len, STATUS_SIZE - speed_len, " / %4.1fC", aone->temperature);
+  }
+
+  /* Update label and/or tooltip */
+  if (aone->show_label) {
+    if (config_updated) {
+      // gtk_label_set_width_chars(GTK_LABEL(aone->tray_label), aone->include_temperature ? 12 : 4);
+      gtk_widget_set_tooltip_text(aone->plugin, "ArgonOne fan");
+    }
+    gtk_label_set_text(GTK_LABEL(aone->tray_label), status);
+  } else {
+    gtk_widget_set_tooltip_text(aone->plugin, status);
   }
 }
 
@@ -222,6 +297,9 @@ static GtkWidget *argonone_constructor(LXPanel *panel, config_setting_t *setting
 
   aone = g_new0(ArgonOnePlugin, 1);
 
+  aone->show_label = TRUE;
+  aone->include_temperature = FALSE;
+
   /* Initial values for startup view, should be updated ASAP via D-Bus */
   aone->is_fan_control_enabled = TRUE;
   aone->fan_speed = -1;
@@ -243,9 +321,11 @@ static GtkWidget *argonone_constructor(LXPanel *panel, config_setting_t *setting
   aone->tray_icon = gtk_image_new();
   gtk_box_pack_start(GTK_BOX(hbox), aone->tray_icon, TRUE, TRUE, 0);
   aone->tray_label = gtk_label_new(NULL);
-  gtk_label_set_width_chars(GTK_LABEL(aone->tray_label), 3);
   gtk_box_pack_start(GTK_BOX(hbox), aone->tray_label, TRUE, TRUE, 0);
   gtk_container_add (GTK_CONTAINER (aone->plugin), hbox);
+
+  /* Update "model" from config settings */
+  argonone_update_from_settings(aone);
 
   /* Set up D-Bus connection, using object manager */
   error = NULL;
@@ -264,10 +344,10 @@ static GtkWidget *argonone_constructor(LXPanel *panel, config_setting_t *setting
   argonone_dbus_query_sync(aone->proxy, "GetTemperature", "(d)", &(aone->temperature));
 
   /* Update UI view */
-  argonone_update_view(aone);
 
   /* Show widget and return */
   gtk_widget_show_all(aone->plugin);
+  argonone_update_view(aone, TRUE);  /* After _show_all(), since it updates label visibility */
   return aone->plugin;
 }
 
@@ -279,5 +359,7 @@ LXPanelPluginInit fm_module_init_lxpanel_gtk = {
   .name = "ArgonOne",
   .description = "ArgonOne case fan monitoring and control",
   .new_instance = argonone_constructor,
+  .reconfigure = argonone_configuration_changed,
   .button_press_event = argonone_button_press_event,
+  .config = argonone_configure_dialog
 };
