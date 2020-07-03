@@ -47,7 +47,7 @@ Depends:
  ${misc:Depends},
  ${shlibs:Depends},
  lxpanel,
- argon1
+ argon1 (>= 0.2)
 Description: LXPanel plugin for Argon One fan control service
  An LXPanel plugin for the alternative implementation of fan and power control
  service for the Argon One Raspberry Pi case. It displays current fan speed,

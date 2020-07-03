@@ -1,3 +1,19 @@
+argon1 (0.2) unstable; urgency=low
+
+  * Make lxplugin icon change color based on fan speed
+  * Updated README.md
+  * Add basic configuration to lxpanel plugin
+  * Add DEB for lxpanel plugin
+  * Fix argonctl cmds for button-based power control
+  * Manpage for argonctl and argon1 DEB doc update
+  * Initial commit of LXPanel plugin
+  * Cleaned up internals of argonctl_main
+  * Add Get/SetFanSpeedLUT D-Bus endpoints
+  * Fix rsyslogd config file
+  * Replace XML-RPC server with system DBus service.
+
+ -- Spiros Papadimitriou <spapadim@gmail.com>  Fri, 3 Jul 2020 12:58:52 -0400
+
 argon1 (0.1) unstable; urgency=low
 
   * Adjust default LUT so fan doesn't start as often
