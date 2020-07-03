@@ -5,10 +5,14 @@
 # This software is distributed on an "AS IS" basis,
 # WITHOUT WARRANTY OF ANY KIND, either express or implied.
 
+
 # Set defaults, if not already defined
 INSTALL ?= /usr/bin/install
 INSTALL_DATA ?= $(INSTALL) -m 0644
 CLANG ?= /usr/bin/clang-9
+
+ICON_PREFIX := $(DESTDIR)/usr/share/icons/hicolor
+
 
 all: argonone.so
 
@@ -25,18 +29,27 @@ distclean: clean
 
 install: SHELL:=/bin/bash
 install: all
+	# Install shared object
 	$(INSTALL) -d $(DESTDIR)`pkg-config --variable=pluginsdir lxpanel`/
+	# Install icons
 	$(INSTALL) -m 0644 argonone.so $(DESTDIR)`pkg-config --variable=pluginsdir lxpanel`/
-	$(INSTALL) -d $(DESTDIR)/usr/share/icons/hicolor/{16x16,24x24}/status
-	$(INSTALL_DATA) argonone-fan_16.png $(DESTDIR)/usr/share/icons/hicolor/16x16/status/argonone-fan.png
-	$(INSTALL_DATA) argonone-fan_24.png $(DESTDIR)/usr/share/icons/hicolor/24x24/status/argonone-fan.png
-	$(INSTALL_DATA) argonone-fan-paused_16.png $(DESTDIR)/usr/share/icons/hicolor/16x16/status/argonone-fan-paused.png
-	$(INSTALL_DATA) argonone-fan-paused_24.png $(DESTDIR)/usr/share/icons/hicolor/24x24/status/argonone-fan-paused.png
+	for sz in 16 24; do \
+		$(INSTALL) -d $(ICON_PREFIX)/$${sz}x$${sz}/status; \
+		for icon in argonone-fan{,-paused,-medium,-high}; do \
+			$(INSTALL_DATA) icons/$${icon}_$${sz}.png $(ICON_PREFIX)/$${sz}x$${sz}/status/$${icon}.png; \
+		done; \
+	done
 
+uninstall: SHELL:=/bin/bash
 uninstall:
+	# Remove shared object
 	rm -v $(DESTDIR)`pkg-config --variable=pluginsdir lxpanel`/argonone.so
-	rm -v $(DESTDIR)/usr/share/icons/hicolor/{16x16,24x24}/status/argonone-fan.png
-	rm -v $(DESTDIR)/usr/share/icons/hicolor/{16x16,24x24}/status/argonone-fan-paused.png
+	# Remove icons
+	for sz in 16 24; do \
+		for icon in argonone-fan{,-paused,-medium,-high}; do \
+			rm -v $(ICON_PREFIX)/$${sz}x$${sz}/status/$${icon}.png; \
+		done; \
+	done
 
 compile_commands.json: SHELL:=/bin/bash
 compile_commands.json: argonone.c
