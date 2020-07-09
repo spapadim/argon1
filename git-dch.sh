@@ -41,7 +41,7 @@ check_version_tag() {
 [ -d debian ] || die "ERROR: debian folder does not exist; is pwd wrong?"
 
 [ -f debian/control ] || die "ERROR: debian/control does not exist"
-pkgname=`cat debian/control | grep '^Package: ' | sed 's/^Package: //'`
+pkgname=`cat debian/control | grep '^Source: ' | sed 's/^Source: //'`
 
 replace_changelog=0
 keep_last=""
