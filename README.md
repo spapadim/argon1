@@ -137,3 +137,26 @@ Furthermore, if you wish to monitor all daemon events, you can do so via, e.g.,
 dbus-monitor --system "sender='net.clusterhack.ArgonOne'"
 ```
 
+# Hardware protocol
+
+The hardware protocol is not officially documented but can be inferred from the official scripts.  Some aspects are rather awkward (probably this is a "home-brew" protocol, not based on some standard IC for e.g., PWM control, and not intended for public consumption?).  In particular:
+
+* The hardware uses both a GPIO pin (as an interrupt signal, from board to Pi communication), as well as I2C (device is a slave, for Pi to board communication).
+
+* A signal is sent over GPIO whenever the power button is pressed.  This is a pulse, whose width encodes the press-type parameter: 10-30msec means "reboot" while 30-50msec means "shutdown".  Note that pulse widths do not have anything to do with physical button presses ("reboot" is triggered by a double-press, whereas "shutdown" is triggered by a press between 3-5 sec).
+  * After a "reboot" request, the board will not do anything else.  However, it seems it will remember this and, after a "power off request" (see below) is received, it will restore power after cutting it briefly.
+  * After a "shutdown" request, the board will wait for a brief period of time and then cut off power anyway.  Therefore, it is critical that the system `shutdown` command is issued ASAP.
+  Unfortunately, it seems that this poweroff delay is hardcoded into the board's firmware.
+
+  > If your shutdown sequence takes longer than 1-2sec (e.g., if you mount network drives that need to be flushed and umounted, for instance), it would be better to avoid using the case's power button to initiate a shutdown.
+
+* On I2C, the device address is 0x1a (26) and only register 0x00 is used for everything.  The register can only be written and it is "overloaded" for various things:
+  * Values between 0-100 (inclusive) are interpreted as fan speeds.
+  * The value 0xff (255) is interpreted as a "power off request".  This is apparently intended to be sent by a systemd/initd shutdown script, so that the board knows to cut power even if the shutdown is performed by issuing a `shutdown` command manually (but, see above for exception).
+
+&lt;rant&gt; For what it's worth, IMHO the hardware protocol incorporates unnecessary, hardcoded logic.  It would be better to delegate all logic to the Raspberry Pi:
+
+* Button presses should merely convey information about the event, but **not** initiate any actions.  Those should be initiated by the Pi.  In fact, I see no reason why the button press patterns should be hardcoded in the firmware; the button signal could be passed verbatim to the Pi's GPIO without any interpretation (maybe debouncing, but that's it).  This would further allow easily changing or adding button press patterns in software.
+* Instead of the doubly-overloaded I2C register 0x00 and command 0xFF (with semantics of "turn off power and stay off, except if a "reboot" button press was sent \[how long ago?\], in which case turn power off and then back on"), the board could use another register (e.g., 0x01) for simple power-related commands.  These should include at least a "power off and stay off" command code, as well as a "power off then back on" command.  If implementing some minimal logic was desired (e.g., so that customers don't get disappointed if the button does nothing without software installed), then perhaps a "disable power actions" command code should also be included (which control software would issue immediately upon starting up -- and, perhaps, a separate "enable power actions" command could be optionally issued when control software exits).
+
+But, anyway, the protocol is what it is, and the overall experience is not at all bad, despite some minor shortcomings!  The case design itself (and it's cooling capacity) is great, and that's what really matters. &lt;/rant&gt;

@@ -1,0 +1,1 @@
+argonone ALL=(root) NOPASSWD: /sbin/shutdown, (root) NOPASSWD: /sbin/reboot

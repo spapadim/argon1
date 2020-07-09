@@ -16,6 +16,7 @@ setup(
     "console_scripts": [
       "argonctl = argonone.cmdline:argonctl_main",
       "argononed = argonone.cmdline:argondaemon_main",
+      "argonone-shutdown = argonone.cmdline:argonshutdown_main",
     ],
   },
 

@@ -1,7 +1,7 @@
 power_button:
   enabled: True
-  reboot_cmd: sudo reboot
-  shutdown_cmd: sudo shutdown -h now
+  reboot_cmd: sudo /sbin/reboot
+  shutdown_cmd: sudo /sbin/shutdown -h now
 fan_control:
   enabled: True
   poll_interval_sec: 10.0

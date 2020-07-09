@@ -54,6 +54,11 @@ button presses \fIare\fR monitored (and D-Bus signals are emitted), but the daem
 does not issue system shutdown or reboot commands itself.  This is similar to 
 disabling temperature-based fan speed control: temperature is monitored (and D-Bus signals
 emmitted), but the daemon itself does not issue fan speed commands.
+.IP
+.BI NOTE:
+Even if power button control is disabled/paused, upon shutdown the daemon will
+issue a system command \fIanyway\fR.  This is a workaround for ArgonOne's hardware "protocol"
+(see README.md for more information).
 .TP
 .BR shutdown
 This is a special command, reserved \fIonly\fR for root and argonone system user.  It should

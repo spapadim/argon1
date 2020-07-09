@@ -31,6 +31,11 @@ override_dh_shlibdeps:
 
 ################################################################
 
+override_dh_fixperms:
+	dh_fixperms
+	# TODO this is lost when files are copied over to final pkg dir
+	chmod u+s debian/tmp/usr/bin/argonone-shutdown
+
 override_dh_installsystemd:
 	dh_installsystemd --name=argonone
 

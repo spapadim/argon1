@@ -9,6 +9,11 @@ ${DEBIAN_SCRIPT_TRACE:+ echo "#42#DEBUG# RUNNING $0 $*" 1>&2 }
 
 #DEBHELPER#
 
+# Change owner of /usr/bin/argonone-shutdown to argonone (script is setuid)
+echo "Setting /usr/bin/argonone-shutdown to suid argonone"
+chown argonone.argonone /usr/bin/argonone-shutdown
+chmod u+s /usr/bin/argonone-shutdown
+
 # Add user "argonone" to the "i2c" group, so daemon can access
 echo "Adding user argonone to gpio and i2c groups"
 usermod -a -G gpio,i2c argonone

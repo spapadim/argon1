@@ -1,5 +1,6 @@
 #!/usr/bin/dh-exec
 argonone.yaml => etc/argonone.yaml
+debian/argon1.argonone.sudoers => etc/sudoers.d/010_argonone
 debian/argon1.argonone.rsyslogd => etc/rsyslog.d/argonone.conf
 debian/argon1.argonone.dbus => etc/dbus-1/system.d/argonone.conf
 #
